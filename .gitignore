@@ -1,0 +1,11 @@
+*.class
+*.jar
+target/
+
+*.war
+.env
+Desktop.ini
+.DS_Store
+out/
+*.iml
+.gradle/
