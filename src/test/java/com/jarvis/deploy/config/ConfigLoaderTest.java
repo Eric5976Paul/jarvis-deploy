@@ -66,4 +66,18 @@ class ConfigLoaderTest {
 
         assertThrows(IllegalArgumentException.class, () -> loader.load(config));
     }
+
+    @Test
+    void appliesDefaultMaxRollbackVersionsWhenMissing(@TempDir Path tempDir) throws IOException {
+        Path config = tempDir.resolve("jarvis.yml");
+        Files.writeString(config,
+                "appName: my-service\n" +
+                "artifactPath: build/my-service.jar\n");
+
+        DeploymentConfig result = loader.load(config);
+
+        // Verify that a sensible default is applied when maxRollbackVersions is not specified
+        assertTrue(result.getMaxRollbackVersions() > 0,
+                "Expected a positive default for maxRollbackVersions, got: " + result.getMaxRollbackVersions());
+    }
 }
