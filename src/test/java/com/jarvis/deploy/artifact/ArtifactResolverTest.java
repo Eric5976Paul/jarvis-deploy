@@ -86,4 +86,20 @@ class ArtifactResolverTest {
         var path = resolver.expectedPath(null);
         assertTrue(path.isEmpty());
     }
+
+    @Test
+    void resolve_withMultipleArtifacts_returnsExactVersionMatch() throws IOException {
+        // Ensure that resolving a specific version does not accidentally match
+        // a similarly named artifact (e.g. "1.0.0" should not match "1.0.0-SNAPSHOT")
+        File jar = tempDir.resolve("my-app-1.0.0.jar").toFile();
+        File snapshotJar = tempDir.resolve("my-app-1.0.0-SNAPSHOT.jar").toFile();
+        assertTrue(jar.createNewFile());
+        assertTrue(snapshotJar.createNewFile());
+
+        ArtifactResolutionResult result = resolver.resolve("1.0.0");
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getArtifactPath().isPresent());
+        assertEquals("my-app-1.0.0.jar", result.getArtifactPath().get().getFileName().toString());
+    }
 }
