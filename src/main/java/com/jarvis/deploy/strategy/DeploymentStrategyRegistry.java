@@ -23,6 +23,24 @@ public class DeploymentStrategyRegistry {
         strategies.put(name.toLowerCase(), strategy);
     }
 
+    /**
+     * Registers a strategy only if no strategy is already registered under the given name.
+     *
+     * @param name     the strategy name
+     * @param strategy the strategy to register
+     * @return {@code true} if the strategy was registered, {@code false} if a strategy
+     *         with that name already existed
+     */
+    public boolean registerIfAbsent(String name, DeploymentStrategy strategy) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Strategy name must not be blank");
+        }
+        if (strategy == null) {
+            throw new IllegalArgumentException("Strategy must not be null");
+        }
+        return strategies.putIfAbsent(name.toLowerCase(), strategy) == null;
+    }
+
     public Optional<DeploymentStrategy> find(String name) {
         if (name == null) return Optional.empty();
         return Optional.ofNullable(strategies.get(name.toLowerCase()));
