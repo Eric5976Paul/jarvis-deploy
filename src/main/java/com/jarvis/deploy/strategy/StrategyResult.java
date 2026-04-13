@@ -1,61 +1,52 @@
 package com.jarvis.deploy.strategy;
 
 import java.time.Instant;
-import java.util.Collections;
-import java.util.List;
 import java.util.Objects;
 
 /**
- * Captures the outcome of a deployment strategy execution.
+ * Represents the outcome of executing a deployment strategy.
  */
 public class StrategyResult {
 
-    public enum Status { SUCCESS, PARTIAL, FAILED }
-
-    private final Status status;
     private final String strategyName;
+    private final boolean success;
     private final String message;
-    private final List<String> steps;
-    private final Instant completedAt;
+    private final Instant executedAt;
 
-    public StrategyResult(Status status, String strategyName, String message, List<String> steps) {
-        this.status = Objects.requireNonNull(status, "status must not be null");
-        this.strategyName = Objects.requireNonNull(strategyName, "strategyName must not be null");
-        this.message = message != null ? message : "";
-        this.steps = steps != null ? Collections.unmodifiableList(steps) : Collections.emptyList();
-        this.completedAt = Instant.now();
+    private StrategyResult(String strategyName, boolean success, String message, Instant executedAt) {
+        this.strategyName = strategyName;
+        this.success = success;
+        this.message = message;
+        this.executedAt = executedAt;
     }
 
-    public static StrategyResult success(String strategyName, String message, List<String> steps) {
-        return new StrategyResult(Status.SUCCESS, strategyName, message, steps);
+    public static StrategyResult success(String strategyName, String message) {
+        return new StrategyResult(
+            Objects.requireNonNull(strategyName),
+            true,
+            message,
+            Instant.now()
+        );
     }
 
-    public static StrategyResult failed(String strategyName, String message, List<String> steps) {
-        return new StrategyResult(Status.FAILED, strategyName, message, steps);
+    public static StrategyResult failure(String strategyName, String reason) {
+        return new StrategyResult(
+            strategyName != null ? strategyName : "unknown",
+            false,
+            reason,
+            Instant.now()
+        );
     }
 
-    public static StrategyResult partial(String strategyName, String message, List<String> steps) {
-        return new StrategyResult(Status.PARTIAL, strategyName, message, steps);
-    }
-
-    public boolean isSuccessful() {
-        return status == Status.SUCCESS;
-    }
-
-    public Status getStatus() { return status; }
     public String getStrategyName() { return strategyName; }
+    public boolean isSuccess() { return success; }
     public String getMessage() { return message; }
-    public List<String> getSteps() { return steps; }
-    public Instant getCompletedAt() { return completedAt; }
+    public Instant getExecutedAt() { return executedAt; }
 
     @Override
     public String toString() {
-        return "StrategyResult{" +
-                "status=" + status +
-                ", strategy='" + strategyName + '\'' +
-                ", message='" + message + '\'' +
-                ", steps=" + steps.size() +
-                ", completedAt=" + completedAt +
-                '}';
+        return "StrategyResult{strategy='" + strategyName +
+               "', success=" + success +
+               ", message='" + message + "'}";
     }
 }
