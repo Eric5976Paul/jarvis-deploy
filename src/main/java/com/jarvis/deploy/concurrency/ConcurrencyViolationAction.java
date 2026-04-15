@@ -12,5 +12,17 @@ public enum ConcurrencyViolationAction {
     QUEUE,
 
     /** Cancel the oldest running deployment and proceed with the new one. */
-    CANCEL_OLDEST
+    CANCEL_OLDEST;
+
+    /**
+     * Returns whether this action allows the incoming deployment to eventually proceed.
+     * <p>
+     * {@code REJECT} discards the request entirely, while {@code QUEUE} and
+     * {@code CANCEL_OLDEST} both result in the new deployment being executed.
+     *
+     * @return {@code true} if the deployment may proceed; {@code false} if it will be rejected
+     */
+    public boolean allowsDeploymentToproceed() {
+        return this != REJECT;
+    }
 }
