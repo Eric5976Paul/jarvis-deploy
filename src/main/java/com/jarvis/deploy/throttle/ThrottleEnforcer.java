@@ -1,48 +1,58 @@
 package com.jarvis.deploy.throttle;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Deque;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Enforces deployment throttle policies per environment.
+ */
 public class ThrottleEnforcer {
 
-    private final Map<String, List<Instant>> deploymentTimestamps = new ConcurrentHashMap<>();
-    private final Map<String, Instant> windowStarts = new ConcurrentHashMap<>();
+    private final Map<String, Deque<Instant>> deploymentTimestamps = new ConcurrentHashMap<>();
 
-    public ThrottleCheckResult check(DeploymentThrottle throttle) {
-        String env = throttle.getEnvironment();
+    public ThrottleCheckResult check(String environment, DeploymentThrottle throttle) {
+        if (throttle == null || throttle.getAction() == ThrottleAction.ALLOW) {
+            return ThrottleCheckResult.allowed();
+        }
+
+        Deque<Instant> timestamps = deploymentTimestamps
+                .computeIfAbsent(environment, k -> new LinkedList<>());
+
         Instant now = Instant.now();
+        Instant windowStart = now.minusSeconds(throttle.getWindowSeconds());
 
-        windowStarts.putIfAbsent(env, now);
-        Instant windowStart = windowStarts.get(env);
+        synchronized (timestamps) {
+            // Remove entries outside the window
+            while (!timestamps.isEmpty() && timestamps.peekFirst().isBefore(windowStart)) {
+                timestamps.pollFirst();
+            }
 
-        if (throttle.isWindowExpired(windowStart)) {
-            windowStarts.put(env, now);
-            deploymentTimestamps.put(env, new ArrayList<>());
-            windowStart = now;
+            int current = timestamps.size();
+            if (current >= throttle.getMaxDeployments()) {
+                String reason = String.format(
+                        "Throttle limit reached: %d deployments in %ds window for env '%s'",
+                        current, throttle.getWindowSeconds(), environment);
+                return ThrottleCheckResult.throttled(reason, throttle.getAction());
+            }
+
+            timestamps.addLast(now);
+            return ThrottleCheckResult.allowed();
         }
-
-        List<Instant> timestamps = deploymentTimestamps.computeIfAbsent(env, k -> new ArrayList<>());
-        int count = timestamps.size();
-
-        if (count >= throttle.getMaxDeploymentsPerWindow()) {
-            return ThrottleCheckResult.exceeded(env, count, throttle.getMaxDeploymentsPerWindow(),
-                    throttle.getActionOnExceed(), windowStart.plus(throttle.getWindowDuration()));
-        }
-
-        timestamps.add(now);
-        return ThrottleCheckResult.allowed(env, count + 1, throttle.getMaxDeploymentsPerWindow());
     }
 
     public void reset(String environment) {
         deploymentTimestamps.remove(environment);
-        windowStarts.remove(environment);
     }
 
-    public int getCurrentCount(String environment) {
-        List<Instant> ts = deploymentTimestamps.get(environment);
-        return ts == null ? 0 : ts.size();
+    public int currentCount(String environment, DeploymentThrottle throttle) {
+        Deque<Instant> timestamps = deploymentTimestamps.get(environment);
+        if (timestamps == null) return 0;
+        Instant windowStart = Instant.now().minusSeconds(throttle.getWindowSeconds());
+        synchronized (timestamps) {
+            return (int) timestamps.stream().filter(t -> t.isAfter(windowStart)).count();
+        }
     }
 }
