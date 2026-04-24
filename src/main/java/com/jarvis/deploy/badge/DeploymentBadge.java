@@ -49,6 +49,18 @@ public class DeploymentBadge {
         return String.format("https://img.shields.io/badge/%s-%s-%s", label, message, color);
     }
 
+    /**
+     * Returns a Markdown snippet that embeds the badge image as a clickable link,
+     * pointing to the Shields.io badge URL. Useful for pasting directly into README files.
+     *
+     * Example output:
+     *   ![prod-1.2.3](https://img.shields.io/badge/prod-1.2.3-brightgreen)
+     */
+    public String toMarkdown() {
+        String altText = environment + "-" + version;
+        return String.format("![%s](%s)", altText, toShieldsUrl());
+    }
+
     @Override
     public String toString() {
         return String.format("DeploymentBadge{env='%s', version='%s', status=%s, color='%s', generatedAt=%s}",
