@@ -75,4 +75,17 @@ class AuditLoggerTest {
         assertTrue(lines.get(0).contains("ROLLBACK_STARTED"));
         assertTrue(lines.get(1).contains("ROLLBACK_SUCCEEDED"));
     }
+
+    @Test
+    void shouldRecordCorrectMetadataOnLoggedEvent() {
+        logger.log(AuditEvent.EventType.DEPLOY_STARTED, "staging", "2.1.0", "bob", "Deploying 2.1.0");
+
+        AuditEvent event = logger.getEvents().get(0);
+        assertEquals(AuditEvent.EventType.DEPLOY_STARTED, event.getType());
+        assertEquals("staging", event.getEnvironment());
+        assertEquals("2.1.0", event.getVersion());
+        assertEquals("bob", event.getInitiator());
+        assertEquals("Deploying 2.1.0", event.getMessage());
+        assertNotNull(event.getTimestamp());
+    }
 }
