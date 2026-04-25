@@ -1,0 +1,11 @@
+package com.jarvis.deploy.quarantine;
+
+public enum QuarantineReason {
+    HEALTH_CHECK_FAILED,
+    COMPLIANCE_VIOLATION,
+    CIRCUIT_BREAKER_OPEN,
+    CANARY_EVALUATION_FAILED,
+    MANUAL_OVERRIDE,
+    SECURITY_SCAN_FAILED,
+    DEPENDENCY_UNRESOLVED
+}
