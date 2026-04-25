@@ -1,7 +1,10 @@
 package com.jarvis.deploy.quota;
 
+import java.time.Instant;
+import java.util.Optional;
+
 /**
- * Represents the outcome of a deployment quota check.
+ * Encapsulates the result of a deployment quota check.
  */
 public class QuotaCheckResult {
 
@@ -9,33 +12,22 @@ public class QuotaCheckResult {
     private final String environment;
     private final int currentCount;
     private final int maxAllowed;
-    private final String message;
+    private final String reason;
+    private final Instant checkedAt;
+    private final Instant resetAt;
 
-    private QuotaCheckResult(boolean allowed, String environment, int currentCount, int maxAllowed, String message) {
-        this.allowed = allowed;
-        this.environment = environment;
-        this.currentCount = currentCount;
-        this.maxAllowed = maxAllowed;
-        this.message = message;
-    }
-
-    public static QuotaCheckResult allowed(String environment, int currentCount, int maxAllowed) {
-        String msg = String.format("Deployment allowed for '%s': %d/%d used", environment, currentCount, maxAllowed);
-        return new QuotaCheckResult(true, environment, currentCount, maxAllowed, msg);
-    }
-
-    public static QuotaCheckResult denied(String environment, int currentCount, int maxAllowed) {
-        String msg = String.format("Quota exceeded for '%s': %d/%d deployments in current window",
-                environment, currentCount, maxAllowed);
-        return new QuotaCheckResult(false, environment, currentCount, maxAllowed, msg);
+    private QuotaCheckResult(Builder builder) {
+        this.allowed = builder.allowed;
+        this.environment = builder.environment;
+        this.currentCount = builder.currentCount;
+        this.maxAllowed = builder.maxAllowed;
+        this.reason = builder.reason;
+        this.checkedAt = builder.checkedAt != null ? builder.checkedAt : Instant.now();
+        this.resetAt = builder.resetAt;
     }
 
     public boolean isAllowed() {
         return allowed;
-    }
-
-    public boolean isDenied() {
-        return !allowed;
     }
 
     public String getEnvironment() {
@@ -50,12 +42,48 @@ public class QuotaCheckResult {
         return maxAllowed;
     }
 
-    public String getMessage() {
-        return message;
+    public Optional<String> getReason() {
+        return Optional.ofNullable(reason);
+    }
+
+    public Instant getCheckedAt() {
+        return checkedAt;
+    }
+
+    public Optional<Instant> getResetAt() {
+        return Optional.ofNullable(resetAt);
+    }
+
+    public int getRemainingQuota() {
+        return Math.max(0, maxAllowed - currentCount);
     }
 
     @Override
     public String toString() {
-        return message;
+        return String.format("QuotaCheckResult{allowed=%b, env='%s', current=%d, max=%d, remaining=%d}",
+                allowed, environment, currentCount, maxAllowed, getRemainingQuota());
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static class Builder {
+        private boolean allowed;
+        private String environment;
+        private int currentCount;
+        private int maxAllowed;
+        private String reason;
+        private Instant checkedAt;
+        private Instant resetAt;
+
+        public Builder allowed(boolean allowed) { this.allowed = allowed; return this; }
+        public Builder environment(String environment) { this.environment = environment; return this; }
+        public Builder currentCount(int currentCount) { this.currentCount = currentCount; return this; }
+        public Builder maxAllowed(int maxAllowed) { this.maxAllowed = maxAllowed; return this; }
+        public Builder reason(String reason) { this.reason = reason; return this; }
+        public Builder checkedAt(Instant checkedAt) { this.checkedAt = checkedAt; return this; }
+        public Builder resetAt(Instant resetAt) { this.resetAt = resetAt; return this; }
+        public QuotaCheckResult build() { return new QuotaCheckResult(this); }
     }
 }

@@ -1,71 +1,89 @@
 package com.jarvis.deploy.quota;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Tracks and enforces deployment quota limits per environment.
+ * Tracks and enforces deployment quotas per environment within a rolling time window.
  */
 public class DeploymentQuota {
 
-    private final String environment;
-    private final int maxDeploymentsPerHour;
-    private final AtomicInteger deploymentCount;
-    private Instant windowStart;
+    private final int maxDeploymentsPerWindow;
+    private final Duration windowDuration;
+    private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();
 
-    public DeploymentQuota(String environment, int maxDeploymentsPerHour) {
-        if (environment == null || environment.isBlank()) {
-            throw new IllegalArgumentException("Environment must not be blank");
+    public DeploymentQuota(int maxDeploymentsPerWindow, Duration windowDuration) {
+        if (maxDeploymentsPerWindow <= 0) {
+            throw new IllegalArgumentException("maxDeploymentsPerWindow must be positive");
         }
-        if (maxDeploymentsPerHour <= 0) {
-            throw new IllegalArgumentException("Max deployments per hour must be positive");
+        if (windowDuration == null || windowDuration.isNegative() || windowDuration.isZero()) {
+            throw new IllegalArgumentException("windowDuration must be a positive duration");
         }
-        this.environment = environment;
-        this.maxDeploymentsPerHour = maxDeploymentsPerHour;
-        this.deploymentCount = new AtomicInteger(0);
-        this.windowStart = Instant.now();
+        this.maxDeploymentsPerWindow = maxDeploymentsPerWindow;
+        this.windowDuration = windowDuration;
     }
 
-    /**
-     * Attempts to consume one deployment slot.
-     *
-     * @return QuotaCheckResult indicating whether the quota allows the deployment
-     */
-    public QuotaCheckResult tryConsume() {
-        resetWindowIfExpired();
-        int current = deploymentCount.incrementAndGet();
-        if (current > maxDeploymentsPerHour) {
-            deploymentCount.decrementAndGet();
-            return QuotaCheckResult.denied(environment, current - 1, maxDeploymentsPerHour);
+    public QuotaCheckResult check(String environment) {
+        WindowCounter counter = counters.computeIfAbsent(environment, e -> new WindowCounter());
+        counter.evictExpired(windowDuration);
+        int current = counter.count();
+        boolean allowed = current < maxDeploymentsPerWindow;
+        return QuotaCheckResult.builder()
+                .environment(environment)
+                .currentCount(current)
+                .maxAllowed(maxDeploymentsPerWindow)
+                .allowed(allowed)
+                .reason(allowed ? null : "Quota of " + maxDeploymentsPerWindow + " deployments per " + windowDuration + " exceeded for environment '" + environment + "'")
+                .resetAt(counter.oldestTimestamp() != null ? counter.oldestTimestamp().plus(windowDuration) : null)
+                .build();
+    }
+
+    public QuotaCheckResult recordAndCheck(String environment) {
+        WindowCounter counter = counters.computeIfAbsent(environment, e -> new WindowCounter());
+        counter.evictExpired(windowDuration);
+        int current = counter.count();
+        boolean allowed = current < maxDeploymentsPerWindow;
+        if (allowed) {
+            counter.record();
+            current++;
         }
-        return QuotaCheckResult.allowed(environment, current, maxDeploymentsPerHour);
+        return QuotaCheckResult.builder()
+                .environment(environment)
+                .currentCount(current)
+                .maxAllowed(maxDeploymentsPerWindow)
+                .allowed(allowed)
+                .reason(allowed ? null : "Quota exceeded for environment '" + environment + "'")
+                .resetAt(counter.oldestTimestamp() != null ? counter.oldestTimestamp().plus(windowDuration) : null)
+                .build();
     }
 
-    /**
-     * Returns current usage without consuming a slot.
-     */
-    public int currentUsage() {
-        resetWindowIfExpired();
-        return deploymentCount.get();
+    public void reset(String environment) {
+        counters.remove(environment);
     }
 
-    public String getEnvironment() {
-        return environment;
-    }
+    private static class WindowCounter {
+        private final java.util.Deque<Instant> timestamps = new java.util.ArrayDeque<>();
 
-    public int getMaxDeploymentsPerHour() {
-        return maxDeploymentsPerHour;
-    }
+        synchronized void record() {
+            timestamps.addLast(Instant.now());
+        }
 
-    public Instant getWindowStart() {
-        return windowStart;
-    }
+        synchronized void evictExpired(Duration window) {
+            Instant cutoff = Instant.now().minus(window);
+            while (!timestamps.isEmpty() && timestamps.peekFirst().isBefore(cutoff)) {
+                timestamps.pollFirst();
+            }
+        }
 
-    private void resetWindowIfExpired() {
-        Instant now = Instant.now();
-        if (now.isAfter(windowStart.plusSeconds(3600))) {
-            deploymentCount.set(0);
-            windowStart = now;
+        synchronized int count() {
+            return timestamps.size();
+        }
+
+        synchronized Instant oldestTimestamp() {
+            return timestamps.isEmpty() ? null : timestamps.peekFirst();
         }
     }
 }

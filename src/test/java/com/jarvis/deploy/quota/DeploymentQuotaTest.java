@@ -3,7 +3,9 @@ package com.jarvis.deploy.quota;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import java.time.Duration;
+
+import static org.assertj.core.api.Assertions.*;
 
 class DeploymentQuotaTest {
 
@@ -11,80 +13,94 @@ class DeploymentQuotaTest {
 
     @BeforeEach
     void setUp() {
-        quota = new DeploymentQuota("staging", 3);
+        quota = new DeploymentQuota(3, Duration.ofMinutes(10));
     }
 
     @Test
-    void shouldAllowDeploymentWithinQuota() {
-        QuotaCheckResult result = quota.tryConsume();
-        assertTrue(result.isAllowed());
-        assertEquals("staging", result.getEnvironment());
-        assertEquals(1, result.getCurrentCount());
-        assertEquals(3, result.getMaxAllowed());
+    void check_allowsWhenUnderQuota() {
+        QuotaCheckResult result = quota.check("staging");
+        assertThat(result.isAllowed()).isTrue();
+        assertThat(result.getCurrentCount()).isEqualTo(0);
+        assertThat(result.getMaxAllowed()).isEqualTo(3);
+        assertThat(result.getRemainingQuota()).isEqualTo(3);
+        assertThat(result.getEnvironment()).isEqualTo("staging");
     }
 
     @Test
-    void shouldAllowUpToMaxDeployments() {
-        quota.tryConsume();
-        quota.tryConsume();
-        QuotaCheckResult third = quota.tryConsume();
-        assertTrue(third.isAllowed());
-        assertEquals(3, third.getCurrentCount());
+    void recordAndCheck_incrementsCountAndAllows() {
+        QuotaCheckResult r1 = quota.recordAndCheck("prod");
+        QuotaCheckResult r2 = quota.recordAndCheck("prod");
+
+        assertThat(r1.isAllowed()).isTrue();
+        assertThat(r1.getCurrentCount()).isEqualTo(1);
+        assertThat(r2.isAllowed()).isTrue();
+        assertThat(r2.getCurrentCount()).isEqualTo(2);
     }
 
     @Test
-    void shouldDenyDeploymentWhenQuotaExceeded() {
-        quota.tryConsume();
-        quota.tryConsume();
-        quota.tryConsume();
-        QuotaCheckResult result = quota.tryConsume();
-        assertTrue(result.isDenied());
-        assertFalse(result.isAllowed());
-        assertEquals(3, result.getCurrentCount());
+    void recordAndCheck_deniesWhenQuotaExceeded() {
+        quota.recordAndCheck("prod");
+        quota.recordAndCheck("prod");
+        quota.recordAndCheck("prod");
+
+        QuotaCheckResult result = quota.recordAndCheck("prod");
+
+        assertThat(result.isAllowed()).isFalse();
+        assertThat(result.getCurrentCount()).isEqualTo(3);
+        assertThat(result.getRemainingQuota()).isEqualTo(0);
+        assertThat(result.getReason()).isPresent();
+        assertThat(result.getReason().get()).contains("Quota exceeded");
     }
 
     @Test
-    void shouldNotIncrementCountOnDeniedRequest() {
-        quota.tryConsume();
-        quota.tryConsume();
-        quota.tryConsume();
-        quota.tryConsume(); // denied
-        assertEquals(3, quota.currentUsage());
+    void reset_clearsCounterForEnvironment() {
+        quota.recordAndCheck("dev");
+        quota.recordAndCheck("dev");
+        quota.reset("dev");
+
+        QuotaCheckResult result = quota.check("dev");
+        assertThat(result.getCurrentCount()).isEqualTo(0);
+        assertThat(result.isAllowed()).isTrue();
     }
 
     @Test
-    void shouldReturnCurrentUsageWithoutConsuming() {
-        quota.tryConsume();
-        quota.tryConsume();
-        assertEquals(2, quota.currentUsage());
-        assertEquals(2, quota.currentUsage()); // no side effect
+    void quotas_areIsolatedPerEnvironment() {
+        quota.recordAndCheck("prod");
+        quota.recordAndCheck("prod");
+        quota.recordAndCheck("prod");
+
+        QuotaCheckResult stagingResult = quota.check("staging");
+        assertThat(stagingResult.isAllowed()).isTrue();
+        assertThat(stagingResult.getCurrentCount()).isEqualTo(0);
     }
 
     @Test
-    void shouldThrowOnBlankEnvironment() {
-        assertThrows(IllegalArgumentException.class, () -> new DeploymentQuota("", 5));
-        assertThrows(IllegalArgumentException.class, () -> new DeploymentQuota(null, 5));
+    void constructor_throwsOnInvalidMaxDeployments() {
+        assertThatThrownBy(() -> new DeploymentQuota(0, Duration.ofMinutes(5)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxDeploymentsPerWindow must be positive");
     }
 
     @Test
-    void shouldThrowOnNonPositiveLimit() {
-        assertThrows(IllegalArgumentException.class, () -> new DeploymentQuota("prod", 0));
-        assertThrows(IllegalArgumentException.class, () -> new DeploymentQuota("prod", -1));
+    void constructor_throwsOnNullOrZeroDuration() {
+        assertThatThrownBy(() -> new DeploymentQuota(5, Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("windowDuration must be a positive duration");
+
+        assertThatThrownBy(() -> new DeploymentQuota(5, null))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void shouldIncludeDenialMessageOnExceeded() {
-        quota.tryConsume();
-        quota.tryConsume();
-        quota.tryConsume();
-        QuotaCheckResult result = quota.tryConsume();
-        assertNotNull(result.getMessage());
-        assertTrue(result.getMessage().contains("staging"));
-        assertTrue(result.getMessage().contains("exceeded") || result.getMessage().contains("Quota"));
+    void check_includesResetAtWhenDeploymentsExist() {
+        quota.recordAndCheck("staging");
+        QuotaCheckResult result = quota.check("staging");
+        assertThat(result.getResetAt()).isPresent();
     }
 
     @Test
-    void shouldExposeWindowStart() {
-        assertNotNull(quota.getWindowStart());
+    void check_noResetAtWhenNoDeployments() {
+        QuotaCheckResult result = quota.check("staging");
+        assertThat(result.getResetAt()).isEmpty();
     }
 }
