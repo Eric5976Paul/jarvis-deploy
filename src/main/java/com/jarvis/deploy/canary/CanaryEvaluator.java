@@ -13,6 +13,12 @@ public class CanaryEvaluator {
     private final double maxP99LatencyMs;
 
     public CanaryEvaluator(double maxErrorRate, double maxP99LatencyMs) {
+        if (maxErrorRate < 0 || maxErrorRate > 1) {
+            throw new IllegalArgumentException("maxErrorRate must be between 0.0 and 1.0, got: " + maxErrorRate);
+        }
+        if (maxP99LatencyMs <= 0) {
+            throw new IllegalArgumentException("maxP99LatencyMs must be positive, got: " + maxP99LatencyMs);
+        }
         this.maxErrorRate = maxErrorRate;
         this.maxP99LatencyMs = maxP99LatencyMs;
     }
@@ -50,6 +56,17 @@ public class CanaryEvaluator {
 
         log.info("Canary promote decision for " + config.getAppName());
         return CanaryEvaluationResult.promote(errorRate, p99Latency);
+    }
+
+    /**
+     * Returns true if the given metrics are within acceptable thresholds.
+     *
+     * @param errorRate  observed error rate (0.0 to 1.0)
+     * @param p99Latency observed p99 latency in milliseconds
+     * @return true if both error rate and latency are within configured limits
+     */
+    public boolean isHealthy(double errorRate, double p99Latency) {
+        return errorRate >= 0 && errorRate <= maxErrorRate && p99Latency <= maxP99LatencyMs;
     }
 
     public double getMaxErrorRate() { return maxErrorRate; }
